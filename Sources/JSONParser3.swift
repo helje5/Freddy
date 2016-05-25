@@ -846,6 +846,16 @@ public extension JSONParser {
     }
 
 }
+  
+public extension JSON {
+  
+    public init(jsonString: String) throws {
+        var parser = JSONParser(string: jsonString)
+        self = try parser.parse()
+    }
+  
+}
+
 
 // MARK: - Errors
 

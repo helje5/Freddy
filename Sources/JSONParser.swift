@@ -87,7 +87,7 @@ public struct JSONParser {
     private var loc = 0
     private var depth = 0
 
-    public init(buffer: UnsafeBufferPointer<UInt8>, owner: Any?) {
+    public init(buffer: UnsafeBufferPointer<UInt8>, owner: Any? = nil) {
         self.input = buffer
         self.owner = owner
     }
@@ -444,11 +444,6 @@ public struct JSONParser {
         throw Error.EndOfStreamUnexpected
     }
 
-#if swift(>=3.0) // #swift3-1st-arg
-    private mutating func decodeIntegralValue(_ parser: NumberParser) throws -> JSON {
-      return try decodeIntegralValue(parser: parser)
-    }
-#endif
     private mutating func decodeIntegralValue(parser: NumberParser) throws -> JSON {
         var sign = Sign.Positive
         var parser = parser
@@ -542,11 +537,6 @@ public struct JSONParser {
         return .Double(Double(sign.rawValue) * value * pow(10, Double(exponentSign.rawValue) * exponent))
     }
 
-#if swift(>=3.0) // #swift3-1st-arg
-    private mutating func decodeNumberAsString(_ start: Int) throws -> JSON {
-      return try decodeNumberAsString(start: start)
-    }
-#endif
     private mutating func decodeNumberAsString(start: Int) throws -> JSON {
         var parser: NumberParser = {
             let state: NumberParser.State
@@ -609,17 +599,6 @@ public struct JSONParser {
         }
     }
 
-#if swift(>=3.0) // #swift3-1st-arg
-    private func detectingFloatingPointErrors<T>(_ loc: Int, _ f: @noescape () throws -> T) throws -> T {
-        let flags = FE_UNDERFLOW | FE_OVERFLOW
-        feclearexcept(flags)
-        let value = try f()
-        guard fetestexcept(flags) == 0 else {
-            throw InternalError.NumberOverflow(offset: loc)
-        }
-        return value
-    }
-#else
     private func detectingFloatingPointErrors<T>(loc: Int, @noescape _ f: () throws -> T) throws -> T {
         let flags = FE_UNDERFLOW | FE_OVERFLOW
         feclearexcept(flags)
@@ -629,7 +608,6 @@ public struct JSONParser {
         }
         return value
     }
-#endif
 }
 
 private struct NumberParser {
@@ -832,6 +810,15 @@ public extension JSONParser {
         self.init(buffer: buffer, owner: codePoints)
     }
 
+}
+  
+public extension JSON {
+  
+    public init(jsonString: Swift.String) throws {
+        var parser = JSONParser(string: jsonString)
+        self = try parser.parse()
+    }
+  
 }
 
 // MARK: - Errors
