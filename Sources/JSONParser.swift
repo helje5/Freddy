@@ -8,8 +8,6 @@
 #if swift(>=3.0)
 #else
 
-import class Foundation.NSData
-
 import func Darwin.pow
 import func Darwin.feclearexcept
 import func Darwin.fetestexcept
@@ -89,7 +87,7 @@ public struct JSONParser {
     private var loc = 0
     private var depth = 0
 
-    private init<T>(buffer: UnsafeBufferPointer<UInt8>, owner: T) {
+    public init(buffer: UnsafeBufferPointer<UInt8>, owner: Any?) {
         self.input = buffer
         self.owner = owner
     }
@@ -822,16 +820,6 @@ private struct NumberParser {
 
 public extension JSONParser {
 
-    /// Creates a `JSONParser` ready to parse UTF-8 encoded `NSData`.
-    ///
-    /// If the data is mutable, it is copied before parsing. The data's lifetime
-    /// is extended for the duration of parsing.
-    init(utf8Data inData: NSData) {
-        let data = inData.copy() as! NSData
-        let buffer = UnsafeBufferPointer(start: UnsafePointer<UInt8>(data.bytes), count: data.length)
-        self.init(buffer: buffer, owner: data)
-    }
-
     /// Creates a `JSONParser` from the code units represented by the `string`.
     ///
     /// The synthesized string is lifetime-extended for the duration of parsing.
@@ -844,23 +832,6 @@ public extension JSONParser {
         self.init(buffer: buffer, owner: codePoints)
     }
 
-}
-
-extension JSONParser: JSONParserType {
-
-    /// Creates an instance of `JSON` from UTF-8 encoded `NSData`.
-    /// - parameter data: An instance of `NSData` to parse `JSON` from.
-    /// - throws: Any `JSONParser.Error` that arises during decoding.
-    /// - seealso: JSONParser.parse()
-    public static func createJSONFromData(data: NSData) throws -> JSON {
-        var parser = JSONParser(utf8Data: data)
-        return try parser.parse()
-    }
-#if swift(>=3.0) // #swift3-1st-arg
-    public static func createJSONFromData(_ data: NSData) throws -> JSON {
-      return try createJSONFromData(data: data)
-    }
-#endif
 }
 
 // MARK: - Errors

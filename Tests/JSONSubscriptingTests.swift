@@ -15,7 +15,7 @@ class JSONSubscriptingTests: XCTestCase {
     private var json: JSON!
     private var noWhiteSpaceData: NSData!
     
-    func parser() -> JSONParserType.Type {
+    func parser() -> JSONParser.Type {
         return JSONParser.self
     }
     
