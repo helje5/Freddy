@@ -6,6 +6,9 @@
 //  Copyright © 2015 Big Nerd Ranch. All rights reserved.
 //
 
+#if swift(>=3.0) // #swift3-decl
+#else
+  
 // MARK: JSONPathType
 
 /// A protocol used to define a path within an instance of `JSON` that leads to some desired value.
@@ -29,18 +32,6 @@ public protocol JSONPathType {
     /// Upon failure, implementers should throw an error from `JSON.Error`.
     func valueInArray(array: [JSON]) throws -> JSON
 }
-
-#if swift(>=3.0) // #swift3-1st-arg
-extension JSONPathType {
-  func valueInDictionary(_ dictionary: [Swift.String : JSON]) throws -> JSON {
-    return try valueInDictionary(dictionary: dictionary)
-  }
-  func valueInArray(_ array: [JSON]) throws -> JSON {
-    return try valueInArray(array: array)
-  }
-  
-}
-#endif
 
 extension JSONPathType {
 
@@ -116,15 +107,6 @@ private extension JSON {
         }
         return result
     }
-
-#if swift(>=3.0) // #swift3-1st-arg
-  func valueForPathFragment(_ fragment: JSONPathType, detectNull: Swift.Bool) throws -> JSON {
-    return try valueForPathFragment(fragment: fragment, detectNull: detectNull)
-  }
-  func valueAtPath(_ path: [JSONPathType], detectNull: Swift.Bool = false) throws -> JSON {
-    return try valueAtPath(path: path, detectNull: detectNull)
-  }
-#endif
 }
 
 // MARK: - Subscripting operator
@@ -253,25 +235,6 @@ extension JSON {
         public static let MissingKeyBecomesNil = SubscriptingOptions(rawValue: 1 << 1)
     }
     
-#if swift(>=3.0) // #swift3-1st-arg #swift3-decl #swift3-1arg-closure
-    func mapOptionalAtPath<Value>(_ path: [JSONPathType], alongPath: SubscriptingOptions, transform: @noescape (JSON) throws -> Value) throws -> Value? {
-        let detectNull = alongPath.contains(.NullBecomesNil)
-        let detectNotFound = alongPath.contains(.MissingKeyBecomesNil)
-        var json: JSON?
-        do {
-            json = try valueAtPath(path, detectNull: detectNull)
-            return try json.map(transform)
-        } catch Error.IndexOutOfBounds where detectNotFound {
-            return nil
-        } catch Error.KeyNotFound where detectNotFound {
-            return nil
-        } catch Error.ValueNotConvertible where detectNull && json == .Null {
-            return nil
-        } catch SubscriptError.SubscriptIntoNull where detectNull {
-            return nil
-        }
-    }
-#else
     func mapOptionalAtPath<Value>(path: [JSONPathType], alongPath: SubscriptingOptions, @noescape transform: JSON throws -> Value) throws -> Value? {
         let detectNull = alongPath.contains(.NullBecomesNil)
         let detectNotFound = alongPath.contains(.MissingKeyBecomesNil)
@@ -289,7 +252,6 @@ extension JSON {
             return nil
         }
     }
-#endif
 }
 
 extension JSON {
@@ -440,3 +402,144 @@ extension JSON {
     }
 
 }
+
+// MARK: - Missing-with-fallback unpacking
+
+extension JSON {
+    
+    private func mapOptionalAtPath<Value>(path: [JSONPathType], @noescape fallback: () -> Value, @noescape transform: JSON throws -> Value) throws -> Value {
+        return try mapOptionalAtPath(path, alongPath: .MissingKeyBecomesNil, transform: transform) ?? fallback()
+    }
+
+    /// Attempts to decode into the returning type from a path into
+    /// JSON, or returns a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Value to use when one is missing at the subscript.
+    /// - returns: An initialized member from the inner JSON.
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `UnexpectedSubscript`: A given subscript cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of
+    ///     the `JSON` instance does not match `Decoded`.
+    public func decode<Decoded: JSONDecodable>(path: JSONPathType..., @autoclosure or fallback: () -> Decoded) throws -> Decoded {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: { return try Decoded.init(json: $0) })
+    }
+    
+    /// Retrieves a `Double` from a path into JSON or a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: A floating-point `Double`
+    /// - throws: One of the `JSON.Error` cases thrown by calling `mapOptionalAtPath(_:fallback:transform:)`.
+    /// - seealso: `optionalAtPath(_:ifNotFound)`.
+    public func double(path: JSONPathType..., @autoclosure or fallback: () -> Swift.Double) throws -> Swift.Double {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: Swift.Double.init)
+    }
+    
+    /// Retrieves an `Int` from a path into JSON or a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: A numeric `Int`
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    public func int(path: JSONPathType..., @autoclosure or fallback: () -> Swift.Int) throws -> Swift.Int {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: Swift.Int.init)
+    }
+    
+    /// Retrieves a `String` from a path into JSON or a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: A textual `String`
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    public func string(path: JSONPathType..., @autoclosure or fallback: () -> Swift.String) throws -> Swift.String {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: Swift.String.init)
+    }
+    
+    /// Retrieves a `Bool` from a path into JSON or a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: A truthy `Bool`
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    public func bool(path: JSONPathType..., @autoclosure or fallback: () -> Swift.Bool) throws -> Swift.Bool {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: Swift.Bool.init)
+    }
+    
+    /// Retrieves a `[JSON]` from a path into JSON or a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: An `Array` of `JSON` elements
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    public func array(path: JSONPathType..., @autoclosure or fallback: () -> [JSON]) throws -> [JSON] {
+      return try mapOptionalAtPath(path, fallback: fallback, transform: { return try JSON.getArray($0) })
+    }
+    
+    /// Attempts to decodes many values from a desendant JSON array at a path
+    /// into the recieving structure, returning a fallback if not found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Array to use when one is missing at the subscript.
+    /// - returns: An `Array` of decoded elements
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    ///   * Any error that arises from decoding the value.
+    public func arrayOf<Decoded: JSONDecodable>(path: JSONPathType..., @autoclosure or fallback: () -> [Decoded]) throws -> [Decoded] {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: { return try JSON.getArrayOf($0) })
+    }
+    
+    /// Retrieves a `[String: JSON]` from a path into JSON or a fallback if not
+    /// found.
+    /// - parameter path: 0 or more `String` or `Int` that subscript the `JSON`
+    /// - parameter fallback: Value to use when one is missing at the subscript
+    /// - returns: An `Dictionary` of `String` mapping to `JSON` elements
+    /// - throws: One of the following errors contained in `JSON.Error`:
+    ///   * `KeyNotFound`: A key `path` does not exist inside a descendant
+    ///     `JSON` dictionary.
+    ///   * `IndexOutOfBounds`: An index `path` is outside the bounds of a
+    ///     descendant `JSON` array.
+    ///   * `UnexpectedSubscript`: A `path` item cannot be used with the
+    ///     corresponding `JSON` value.
+    ///   * `TypeNotConvertible`: The target value's type inside of the `JSON`
+    ///     instance does not match the decoded value.
+    public func dictionary(path: JSONPathType..., @autoclosure or fallback: () -> [Swift.String: JSON]) throws -> [Swift.String: JSON] {
+        return try mapOptionalAtPath(path, fallback: fallback, transform: { return try JSON.getDictionary($0) })
+    }
+    
+}
+
+#endif // Swift 2.2
