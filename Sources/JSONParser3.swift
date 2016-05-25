@@ -706,7 +706,12 @@ private struct NumberParser {
     }
 
     mutating func parsePreDecimalDigits(f: @noescape (UInt8) throws -> Void) rethrows {
-        assert(state == .PreDecimalDigits, "Unexpected state entering parsePreDecimalDigits")
+        // FIXME
+        // TODO: This is funny because:
+        //   (lldb) print state
+        //   (Freddy.NumberParser.State) $R0 = PreDecimalDigits
+        // Raises in Swift3
+        // assert(state == .PreDecimalDigits, "Unexpected state entering parsePreDecimalDigits")
         advancing: while loc < input.count {
             let c = input[loc]
             switch c {
