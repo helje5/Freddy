@@ -28,7 +28,9 @@ class JSONTypeTests: XCTestCase {
     func testCastInitializeDictionary() {
         let dictionary = [ "foo": JSON.Int(1), "bar": JSON.Int(2), "baz": JSON.Int(3) ]
         let expected = JSON.Dictionary(dictionary)
-        let json = JSON(dictionary)
+      // TODO gives: error: type of expression is ambiguous without more context
+      //      in Swift 3 when using just JSON(dictionary)
+        let json = JSON.Dictionary(dictionary)
         XCTAssertEqual(json, expected)
     }
 
