@@ -6,10 +6,9 @@
 //  Copyright © 2015 Big Nerd Ranch. Licensed under MIT.
 //
 #if swift(>=3.0)
-#else
-
+  
 import class Foundation.NSData
-
+  
 import func Darwin.pow
 import func Darwin.feclearexcept
 import func Darwin.fetestexcept
@@ -157,7 +156,7 @@ public struct JSONParser {
                     return try decodeIntegralValue(NumberParser(loc: loc, input: input, state: .PreDecimalDigits))
 
                 case Literal.SPACE, Literal.TAB, Literal.RETURN, Literal.NEWLINE:
-                    loc = loc.successor()
+                    loc = input.index(after: loc)
                     
                 default:
                     break advancing
@@ -174,7 +173,7 @@ public struct JSONParser {
         while loc < input.count {
             switch input[loc] {
             case Literal.SPACE, Literal.TAB, Literal.RETURN, Literal.NEWLINE:
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
             default:
                 return
@@ -188,11 +187,11 @@ public struct JSONParser {
         guard JSONEncodingDetector.supportedEncodings.contains(encodingPrefixInformation.encoding) else {
             throw Error.InvalidUnicodeStreamEncoding(detectedEncoding: encodingPrefixInformation.encoding)
         }
-        loc = loc.advancedBy(encodingPrefixInformation.byteOrderMarkLength)
+        loc = input.index(loc, offsetBy: encodingPrefixInformation.byteOrderMarkLength)
     }
 
     private mutating func decodeNull() throws -> JSON {
-        guard loc.advancedBy(3, limit: input.count) != input.count else {
+        guard input.index(loc, offsetBy:3, limitedBy: input.count) != input.count else {
             throw Error.LiteralNilMisspelled(offset: loc)
         }
 
@@ -207,7 +206,7 @@ public struct JSONParser {
     }
 
     private mutating func decodeTrue() throws -> JSON {
-        guard loc.advancedBy(3, limit: input.count) != input.count else {
+        guard input.index(loc, offsetBy:3, limitedBy: input.count) != input.count else {
             throw Error.LiteralTrueMisspelled(offset: loc)
         }
 
@@ -222,7 +221,7 @@ public struct JSONParser {
     }
 
     private mutating func decodeFalse() throws -> JSON {
-        guard loc.advancedBy(4, limit: input.count) != input.count else {
+        guard input.index(loc, offsetBy:4, limitedBy: input.count) != input.count else {
             throw Error.LiteralFalseMisspelled(offset: loc)
         }
 
@@ -240,12 +239,12 @@ public struct JSONParser {
     private var stringDecodingBuffer = [UInt8]()
     private mutating func decodeString() throws -> JSON {
         let start = loc
-        loc = loc.successor()
-        stringDecodingBuffer.removeAll(keepCapacity: true)
+        loc = input.index(after: loc)
+        stringDecodingBuffer.removeAll(keepingCapacity: true)
         while loc < input.count {
             switch input[loc] {
             case Literal.BACKSLASH:
-                loc = loc.successor()
+                loc = input.index(after: loc)
                 switch input[loc] {
                 case Literal.DOUBLE_QUOTE: stringDecodingBuffer.append(Literal.DOUBLE_QUOTE)
                 case Literal.BACKSLASH:    stringDecodingBuffer.append(Literal.BACKSLASH)
@@ -256,7 +255,7 @@ public struct JSONParser {
                 case Literal.t:            stringDecodingBuffer.append(Literal.TAB)
                 case Literal.n:            stringDecodingBuffer.append(Literal.NEWLINE)
                 case Literal.u:
-                    loc = loc.successor()
+                    loc = input.index(after: loc)
                     try readUnicodeEscape(start: loc - 2)
 
                     // readUnicodeEscape() advances loc on its own, so we'll `continue` now
@@ -266,14 +265,14 @@ public struct JSONParser {
                 default:
                     throw Error.ControlCharacterUnrecognized(offset: loc)
                 }
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
             case Literal.DOUBLE_QUOTE:
-                loc = loc.successor()
+                loc = input.index(after: loc)
                 stringDecodingBuffer.append(0)
 
                 guard let string = (stringDecodingBuffer.withUnsafeBufferPointer {
-                    String.fromCString(UnsafePointer($0.baseAddress))
+                    String(validatingUTF8: UnsafePointer($0.baseAddress!))
                 }) else {
                     throw Error.UnicodeEscapeInvalid(offset: start)
                 }
@@ -282,7 +281,7 @@ public struct JSONParser {
 
             case let other:
                 stringDecodingBuffer.append(other)
-                loc = loc.successor()
+                loc = input.index(after: loc)
             }
         }
 
@@ -316,7 +315,7 @@ public struct JSONParser {
         return codeUnit
     }
 
-    private mutating func readUnicodeEscape(start start: Int) throws {
+    private mutating func readUnicodeEscape(start: Int) throws {
         guard let codeUnit = readCodeUnit() else {
             throw Error.UnicodeEscapeInvalid(offset: start)
         }
@@ -342,7 +341,7 @@ public struct JSONParser {
             codeUnits = [codeUnit]
         }
 
-        let transcodeHadError = transcode(UTF16.self, UTF8.self, codeUnits.generate(), { self.stringDecodingBuffer.append($0) }, stopOnError: true)
+        let transcodeHadError = transcode(codeUnits.makeIterator(), from: UTF16.self, to: UTF8.self, stoppingOnError: true, sendingOutputTo: { self.stringDecodingBuffer.append($0) })
 
         if transcodeHadError {
             throw Error.UnicodeEscapeInvalid(offset: start)
@@ -351,14 +350,14 @@ public struct JSONParser {
 
     private mutating func decodeArray() throws -> JSON {
         let start = loc
-        loc = loc.successor()
+        loc = input.index(after: loc)
         var items = [JSON]()
 
         while loc < input.count {
             skipWhitespace()
 
             if loc < input.count && input[loc] == Literal.RIGHT_BRACKET {
-                loc = loc.successor()
+                loc = input.index(after: loc)
                 return .Array(items)
             }
 
@@ -366,7 +365,7 @@ public struct JSONParser {
                 guard loc < input.count && input[loc] == Literal.COMMA else {
                     throw Error.CollectionMissingSeparator(offset: start)
                 }
-                loc = loc.successor()
+                loc = input.index(after: loc)
             }
 
             items.append(try parseValue())
@@ -388,29 +387,35 @@ public struct JSONParser {
         mutating func getBuffer() -> [(String,JSON)] {
             if !buffers.isEmpty {
                 var buffer = buffers.removeLast()
-                buffer.removeAll(keepCapacity: true)
+                buffer.removeAll(keepingCapacity: true)
                 return buffer
             }
             return [(String,JSON)]()
         }
 
+#if swift(>=3.0) // #swift3-1st-arg
+        mutating func putBuffer(_ buffer: [(String,JSON)]) {
+            buffers.append(buffer)
+        }
+#else
         mutating func putBuffer(buffer: [(String,JSON)]) {
             buffers.append(buffer)
         }
+#endif
     }
 
     private var decodeObjectBuffers = DecodeObjectBuffers()
 
     private mutating func decodeObject() throws -> JSON {
         let start = loc
-        loc = loc.successor()
+        loc = input.index(after: loc)
         var pairs = decodeObjectBuffers.getBuffer()
 
         while loc < input.count {
             skipWhitespace()
 
             if loc < input.count && input[loc] == Literal.RIGHT_BRACE {
-                loc = loc.successor()
+                loc = input.index(after: loc)
                 var obj = [String:JSON](minimumCapacity: pairs.count)
                 for (k, v) in pairs {
                     obj[k] = v
@@ -423,7 +428,7 @@ public struct JSONParser {
                 guard loc < input.count && input[loc] == Literal.COMMA else {
                     throw Error.CollectionMissingSeparator(offset: start)
                 }
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
                 skipWhitespace()
             }
@@ -438,7 +443,7 @@ public struct JSONParser {
             guard loc < input.count && input[loc] == Literal.COLON else {
                 throw Error.CollectionMissingSeparator(offset: start)
             }
-            loc = loc.successor()
+            loc = input.index(after: loc)
 
             pairs.append((key, try parseValue()))
         }
@@ -545,6 +550,9 @@ public struct JSONParser {
     }
 
 #if swift(>=3.0) // #swift3-1st-arg
+    private mutating func decodeFloatingPointValue(_ parser: NumberParser, sign: Sign, value: Double) throws -> JSON {
+      return try decodeFloatingPointValue(parser: parser, sign: sign, value: value)
+    }
     private mutating func decodeNumberAsString(_ start: Int) throws -> JSON {
       return try decodeNumberAsString(start: start)
     }
@@ -562,7 +570,7 @@ public struct JSONParser {
             return NumberParser(loc: start, input: input, state: state)
         }()
 
-        stringDecodingBuffer.removeAll(keepCapacity: true)
+        stringDecodingBuffer.removeAll(keepingCapacity: true)
 
         while true {
             switch parser.state {
@@ -598,7 +606,7 @@ public struct JSONParser {
             case .Done:
                 stringDecodingBuffer.append(0)
                 guard let string = (stringDecodingBuffer.withUnsafeBufferPointer {
-                    String.fromCString(UnsafePointer($0.baseAddress))
+                    String(validatingUTF8: UnsafePointer($0.baseAddress!))
                 }) else {
                     // Should never fail - any problems with the number string should
                     // result in thrown errors above
@@ -663,7 +671,7 @@ private struct NumberParser {
     mutating func parseNegative() throws {
         assert(state == .LeadingMinus, "Unexpected state entering parseNegative")
 
-        loc = loc.successor()
+        loc = input.index(after: loc)
         guard loc < input.count else {
             throw JSONParser.Error.EndOfStreamUnexpected
         }
@@ -683,7 +691,7 @@ private struct NumberParser {
     mutating func parseLeadingZero() {
         assert(state == .LeadingZero, "Unexpected state entering parseLeadingZero")
 
-        loc = loc.successor()
+        loc = input.index(after: loc)
         guard loc < input.count else {
             state = .Done
             return
@@ -697,14 +705,14 @@ private struct NumberParser {
         state = .Decimal
     }
 
-    mutating func parsePreDecimalDigits(@noescape f: (UInt8) throws -> Void) rethrows {
+    mutating func parsePreDecimalDigits(f: @noescape (UInt8) throws -> Void) rethrows {
         assert(state == .PreDecimalDigits, "Unexpected state entering parsePreDecimalDigits")
         advancing: while loc < input.count {
             let c = input[loc]
             switch c {
             case Literal.zero...Literal.nine:
                 try f(c)
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
             case Literal.PERIOD:
                 state = .Decimal
@@ -724,7 +732,7 @@ private struct NumberParser {
 
     mutating func parseDecimal() throws {
         assert(state == .Decimal, "Unexpected state entering parseDecimal")
-        loc = loc.successor()
+        loc = input.index(after: loc)
         guard loc < input.count else {
             throw JSONParser.Error.EndOfStreamUnexpected
         }
@@ -738,7 +746,7 @@ private struct NumberParser {
         }
     }
 
-    mutating func parsePostDecimalDigits(@noescape f: (UInt8) throws -> Void) rethrows {
+    mutating func parsePostDecimalDigits(f: @noescape (UInt8) throws -> Void) rethrows {
         assert(state == .PostDecimalDigits, "Unexpected state entering parsePostDecimalDigits")
 
         advancing: while loc < input.count {
@@ -746,7 +754,7 @@ private struct NumberParser {
             switch c {
             case Literal.zero...Literal.nine:
                 try f(c)
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
             case Literal.e, Literal.E:
                 state = .Exponent
@@ -763,7 +771,7 @@ private struct NumberParser {
     mutating func parseExponent() throws -> JSONParser.Sign {
         assert(state == .Exponent, "Unexpected state entering parseExponent")
 
-        loc = loc.successor()
+        loc = input.index(after: loc)
         guard loc < input.count else {
             throw JSONParser.Error.EndOfStreamUnexpected
         }
@@ -788,7 +796,7 @@ private struct NumberParser {
 
     mutating func parseExponentSign() throws {
         assert(state == .ExponentSign, "Unexpected state entering parseExponentSign")
-        loc = loc.successor()
+        loc = input.index(after: loc)
         guard loc < input.count else {
             throw JSONParser.Error.EndOfStreamUnexpected
         }
@@ -802,14 +810,14 @@ private struct NumberParser {
         }
     }
 
-    mutating func parseExponentDigits(@noescape f: (UInt8) throws -> Void) rethrows {
+    mutating func parseExponentDigits(f: @noescape (UInt8) throws -> Void) rethrows {
         assert(state == .ExponentDigits, "Unexpected state entering parseExponentDigits")
         advancing: while loc < input.count {
             let c = input[loc]
             switch c {
             case Literal.zero...Literal.nine:
                 try f(c)
-                loc = loc.successor()
+                loc = input.index(after: loc)
 
             default:
                 break advancing
@@ -935,4 +943,6 @@ extension JSONParser {
         case NumberOverflow(offset: Int)
     }
 }
-#endif // Swift 2.2
+
+#endif // Swift 3
+

@@ -10,12 +10,20 @@
 
 extension JSON: ArrayLiteralConvertible {
     
+#if swift(>=3.0) // #swift3-fd
+    /// Create an instance by copying each element of the `collection` into a
+    /// new `Array`.
+    public init<Collection: CollectionType where Collection.Iterator.Element == JSON>(_ collection: Collection) {
+        self = .Array(Swift.Array(collection))
+    }
+#else
     /// Create an instance by copying each element of the `collection` into a
     /// new `Array`.
     public init<Collection: CollectionType where Collection.Generator.Element == JSON>(_ collection: Collection) {
         self = .Array(Swift.Array(collection))
     }
-
+#endif
+  
     /// Create an instance initialized with `elements`.
     public init(arrayLiteral elements: JSON...) {
         self.init(elements)
@@ -27,6 +35,18 @@ extension JSON: ArrayLiteralConvertible {
 
 extension JSON: DictionaryLiteralConvertible {
     
+#if swift(>=3.0) // #swift3-fd
+    /// Create an instance by copying each key/value pair of the `pairs` into
+    /// a new `Dictionary`.
+    public init<Dictionary: SequenceType where Dictionary.Iterator.Element == (Swift.String, JSON)>(_ pairs: Dictionary) {
+        let minCap = 16 // was: pairs.underestimateCount, which is not accessible
+        var dictionary = Swift.Dictionary<Swift.String, JSON>(minimumCapacity: minCap)
+        for (key, value) in pairs {
+            dictionary[key] = value
+        }
+        self = .Dictionary(dictionary)
+    }
+#else
     /// Create an instance by copying each key/value pair of the `pairs` into
     /// a new `Dictionary`.
     public init<Dictionary: SequenceType where Dictionary.Generator.Element == (Swift.String, JSON)>(_ pairs: Dictionary) {
@@ -36,7 +56,8 @@ extension JSON: DictionaryLiteralConvertible {
         }
         self = .Dictionary(dictionary)
     }
-    
+#endif
+  
     /// Create an instance initialized with `pairs`.
     public init(dictionaryLiteral pairs: (Swift.String, JSON)...) {
         self.init(pairs)

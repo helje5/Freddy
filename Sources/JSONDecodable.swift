@@ -148,4 +148,15 @@ internal extension JSON {
         return try getArray(json).map(Decoded.init)
     }
     
+#if swift(>=3.0) // #swift3-1st-arg
+    static func getArray(_ json: JSON) throws -> [JSON] {
+      return try getArray(json: json)
+    }
+    static func getDictionary(_ json: JSON) throws -> [Swift.String: JSON] {
+      return try getDictionary(json: json)
+    }
+    static func getArrayOf<Decoded: JSONDecodable>(_ json: JSON) throws -> [Decoded] {
+      return try getArrayOf(json: json)
+    }
+#endif
 }
